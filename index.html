@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>ZIP Emulator with Play Screen</title>
+<title>Improved ZIP Emulator with Play Screen</title>
 <style>
   body {
     font-family: Arial, sans-serif;
@@ -29,6 +29,7 @@
     background: #000;
     overflow: hidden;
     box-shadow: 0 0 20px #0ff88caa;
+    position: relative;
   }
   iframe {
     width: 100%;
@@ -43,20 +44,36 @@
   input[type="file"] {
     color: #eee;
   }
+  #errorOverlay {
+    position: absolute;
+    top:0; left:0; right:0; bottom:0;
+    background: rgba(255,0,0,0.85);
+    color: white;
+    font-weight: bold;
+    display: none;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+    text-align: center;
+    z-index: 10;
+  }
 </style>
 </head>
 <body>
 
-<h1>ZIP Emulator — Play Screen</h1>
+<h1>ZIP Emulator — Improved Play Screen</h1>
 <div id="controls">
   <input type="file" id="zipInput" accept=".zip" />
   <button id="playBtn" disabled>Play</button>
   <button id="pauseBtn" disabled>Pause</button>
   <button id="reloadBtn" disabled>Reload</button>
 </div>
+
 <div id="iframeContainer">
   <iframe id="emulatorFrame" sandbox="allow-scripts allow-same-origin"></iframe>
+  <div id="errorOverlay"></div>
 </div>
+
 <div id="status">Upload a ZIP file with your HTML game to get started.</div>
 
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
@@ -67,16 +84,81 @@
   const reloadBtn = document.getElementById('reloadBtn');
   const iframe = document.getElementById('emulatorFrame');
   const status = document.getElementById('status');
+  const errorOverlay = document.getElementById('errorOverlay');
 
   let fileBlobs = {};
   let htmlBlobUrl = null;
   let entryPoint = null;
   let zipLoaded = false;
 
+  // Utility to get base path of file in ZIP, e.g. "folder/index.html" => "folder/"
+  function getBasePath(path) {
+    const parts = path.split('/');
+    parts.pop();
+    return parts.length ? parts.join('/') + '/' : '';
+  }
+
+  // Rewrite URLs inside HTML to point to blob URLs, respecting base path of HTML file
+  function rewriteAssetUrls(htmlText, basePath) {
+    // Replace src, href attributes
+    htmlText = htmlText.replace(/(src|href)\s*=\s*"(.*?)"/g, (match, attr, url) => {
+      if (!url || url.startsWith('http') || url.startsWith('data:') || url.startsWith('#')) return match;
+      const normalizedPath = normalizePath(basePath + url);
+      if (fileBlobs[normalizedPath]) {
+        return `${attr}="${fileBlobs[normalizedPath]}"`;
+      }
+      return match;
+    });
+
+    // Replace srcset (for images with multiple sources)
+    htmlText = htmlText.replace(/srcset\s*=\s*"(.*?)"/g, (match, urls) => {
+      const parts = urls.split(',');
+      const newParts = parts.map(part => {
+        let [url, descriptor] = part.trim().split(/\s+/);
+        if (!url.startsWith('http') && !url.startsWith('data:')) {
+          const normalizedPath = normalizePath(basePath + url);
+          if (fileBlobs[normalizedPath]) url = fileBlobs[normalizedPath];
+        }
+        return descriptor ? `${url} ${descriptor}` : url;
+      });
+      return `srcset="${newParts.join(', ')}"`;
+    });
+
+    // Replace url(...) in inline styles and CSS
+    htmlText = htmlText.replace(/url\(["']?(.*?)["']?\)/g, (match, url) => {
+      if (!url || url.startsWith('http') || url.startsWith('data:')) return match;
+      const normalizedPath = normalizePath(basePath + url);
+      if (fileBlobs[normalizedPath]) {
+        return `url(${fileBlobs[normalizedPath]})`;
+      }
+      return match;
+    });
+
+    return htmlText;
+  }
+
+  // Normalize paths: clean "./" and "../" segments simply
+  function normalizePath(path) {
+    const parts = [];
+    path.split('/').forEach(part => {
+      if (part === '' || part === '.') return;
+      if (part === '..') parts.pop();
+      else parts.push(part);
+    });
+    return parts.join('/');
+  }
+
   async function prepareZip(file) {
     status.textContent = 'Loading ZIP...';
+    errorOverlay.style.display = 'none';
+
+    // Cleanup old blobs
+    for (const url of Object.values(fileBlobs)) {
+      URL.revokeObjectURL(url);
+    }
+    if (htmlBlobUrl) URL.revokeObjectURL(htmlBlobUrl);
+
     fileBlobs = {};
-    htmlBlobUrl && URL.revokeObjectURL(htmlBlobUrl);
     htmlBlobUrl = null;
     entryPoint = null;
     zipLoaded = false;
@@ -87,16 +169,23 @@
       const zip = await jszip.loadAsync(file);
       status.textContent = 'ZIP loaded. Preparing files...';
 
-      for (const filename of Object.keys(zip.files)) {
-        const zipEntry = zip.files[filename];
+      // Load all files as blobs and map their normalized paths
+      const promises = [];
+      zip.forEach((relativePath, zipEntry) => {
         if (!zipEntry.dir) {
-          const content = await zipEntry.async('blob');
-          const blobUrl = URL.createObjectURL(content);
-          fileBlobs[filename] = blobUrl;
+          promises.push(
+            zipEntry.async('blob').then(blob => {
+              const normalized = normalizePath(relativePath);
+              const blobUrl = URL.createObjectURL(blob);
+              fileBlobs[normalized] = blobUrl;
+            })
+          );
         }
-      }
+      });
 
-      // Find index.html or first HTML file
+      await Promise.all(promises);
+
+      // Find entry point index.html or first HTML file
       entryPoint = 'index.html';
       if (!fileBlobs[entryPoint]) {
         entryPoint = Object.keys(fileBlobs).find(f => f.endsWith('.html'));
@@ -109,16 +198,13 @@
         return;
       }
 
-      // Prepare HTML content with asset URLs replaced
-      const indexEntry = zip.files[entryPoint];
+      const indexEntry = zip.file(entryPoint);
+      if (!indexEntry) throw new Error(`Entry point file ${entryPoint} missing`);
+
       let htmlText = await indexEntry.async('text');
 
-      htmlText = htmlText.replace(/(src|href)="([^"]+)"/g, (match, attr, url) => {
-        if (fileBlobs[url]) {
-          return `${attr}="${fileBlobs[url]}"`;
-        }
-        return match;
-      });
+      const basePath = getBasePath(entryPoint);
+      htmlText = rewriteAssetUrls(htmlText, basePath);
 
       const htmlBlob = new Blob([htmlText], { type: 'text/html' });
       htmlBlobUrl = URL.createObjectURL(htmlBlob);
@@ -128,7 +214,6 @@
       pauseBtn.disabled = true;
       reloadBtn.disabled = true;
       zipLoaded = true;
-
     } catch (e) {
       status.textContent = 'Error loading ZIP: ' + e.message;
       playBtn.disabled = true;
@@ -144,6 +229,7 @@
 
   playBtn.addEventListener('click', () => {
     if (!zipLoaded || !htmlBlobUrl) return;
+    errorOverlay.style.display = 'none';
     iframe.src = htmlBlobUrl;
     status.textContent = `Playing: ${entryPoint}`;
     playBtn.disabled = true;
@@ -161,11 +247,23 @@
 
   reloadBtn.addEventListener('click', () => {
     if (!zipLoaded || !htmlBlobUrl) return;
+    errorOverlay.style.display = 'none';
     iframe.src = '';
     setTimeout(() => {
       iframe.src = htmlBlobUrl;
       status.textContent = `Reloaded: ${entryPoint}`;
     }, 50);
+  });
+
+  // Show error overlay if iframe loading fails
+  iframe.addEventListener('error', () => {
+    errorOverlay.textContent = 'Failed to load content inside the emulator.';
+    errorOverlay.style.display = 'flex';
+  });
+
+  // Optional: timeout fallback for slow loading or silent failures
+  iframe.addEventListener('load', () => {
+    errorOverlay.style.display = 'none';
   });
 </script>
 
