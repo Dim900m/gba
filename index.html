@@ -1,78 +1,51 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<title>Pokémon Emulator - ZIP Loader</title>
-<style>
-  body { font-family: Arial, sans-serif; padding: 20px; background: #222; color: #eee; }
-  #output { margin-top: 20px; }
-  #canvas { border: 2px solid #444; background: black; }
-</style>
+  <meta charset="UTF-8" />
+  <title>GBA Emulator Zip Loader Prototype</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </head>
 <body>
+  <h1>GBA Emulator Zip Loader</h1>
+  <input type="file" id="zipfile" accept=".zip" />
+  <p id="status"></p>
 
-<h1>Pokémon Emulator - Load ZIP ROM</h1>
-<input type="file" id="zipInput" accept=".zip" />
-<div id="output"></div>
-<canvas id="canvas" width="160" height="144"></canvas>
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script>
-const zipInput = document.getElementById('zipInput');
-const output = document.getElementById('output');
-const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
-
-zipInput.addEventListener('change', async (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-
-  output.textContent = 'Loading ZIP...';
-
-  const arrayBuffer = await file.arrayBuffer();
-  const zip = await JSZip.loadAsync(arrayBuffer);
-
-  // Find the first .gb or .gbc file
-  let romFile = null;
-  zip.forEach((relativePath, zipEntry) => {
-    if (!romFile && (relativePath.endsWith('.gb') || relativePath.endsWith('.gbc'))) {
-      romFile = zipEntry;
+  <script>
+    // Placeholder emulator interface
+    function loadROM(arrayBuffer) {
+      // This is where you'd hook your emulator core's ROM loading logic.
+      // For demo, just show the size:
+      document.getElementById('status').textContent = 
+        `ROM loaded! Size: ${arrayBuffer.byteLength} bytes`;
+      console.log('ROM data:', new Uint8Array(arrayBuffer));
     }
-  });
 
-  if (!romFile) {
-    output.textContent = 'No Game Boy ROM found in ZIP.';
-    return;
-  }
+    document.getElementById('zipfile').addEventListener('change', async function(event) {
+      const file = event.target.files[0];
+      if (!file) return;
 
-  output.textContent = 'Extracting ROM: ' + romFile.name;
+      document.getElementById('status').textContent = 'Reading zip file...';
 
-  const romData = await romFile.async('uint8array');
+      try {
+        const zip = await JSZip.loadAsync(file);
+        // Find the first .gba file inside the zip
+        const gbaFileName = Object.keys(zip.files).find(name => name.toLowerCase().endsWith('.gba'));
+        if (!gbaFileName) {
+          document.getElementById('status').textContent = 'No .gba file found inside the zip.';
+          return;
+        }
 
-  output.textContent = `Loaded ROM: ${romFile.name} (${romData.length} bytes)`;
+        document.getElementById('status').textContent = `Extracting ${gbaFileName}...`;
 
-  // Now: pass romData to emulator core
-  startEmulator(romData);
-});
+        const gbaFile = zip.file(gbaFileName);
+        const arrayBuffer = await gbaFile.async('arraybuffer');
 
-// Placeholder emulator function
-function startEmulator(romData) {
-  output.textContent += '\nStarting emulator...';
-
-  // TODO: Integrate a JS GameBoy emulator here
-  // For demo, just clear canvas and draw a test pixel:
-  ctx.fillStyle = 'black';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = 'lime';
-  ctx.fillRect(10, 10, 5, 5);
-
-  // Real implementation:
-  // - Instantiate emulator core
-  // - Load romData into emulator memory
-  // - Run emulation loop with requestAnimationFrame
-  // - Render output on canvas
-}
-</script>
-
+        loadROM(arrayBuffer);
+      } catch (err) {
+        document.getElementById('status').textContent = 'Error reading zip: ' + err;
+        console.error(err);
+      }
+    });
+  </script>
 </body>
 </html>
