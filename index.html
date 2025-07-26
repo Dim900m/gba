@@ -1,140 +1,80 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>ZIP Emulator with Console Output</title>
-<style>
-  body { font-family: Arial, sans-serif; margin: 1rem; background: #121212; color: #eee; }
-  #controls { margin-bottom: 1rem; }
-  button { margin-right: 10px; padding: 0.5rem 1rem; font-size: 1rem; cursor: pointer; }
-  #iframeContainer {
-    width: 100%; max-width: 960px; height: 480px;
-    border: 4px solid #0ff; border-radius: 8px;
-    background: #000; overflow: hidden; box-shadow: 0 0 20px #0ff88caa;
-    position: relative;
-  }
-  iframe { width: 100%; height: 100%; border: none; background: #000; }
-  #status { margin-top: 10px; font-weight: bold; }
-  input[type="file"] { color: #eee; }
-  #output {
-    margin-top: 1rem; padding: 10px;
-    background: #1e1e1e; color: #0f0;
-    height: 150px; overflow-y: auto;
-    font-family: monospace; border-radius: 4px;
-  }
-  .log-entry { margin: 0; }
-</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HTML ZIP Emulator</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <style>
+    body {
+      font-family: sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem;
+    }
+    iframe {
+      width: 100%;
+      height: 600px;
+      border: 1px solid #ccc;
+      margin-top: 2rem;
+    }
+  </style>
 </head>
 <body>
-
-<h1>ZIP Emulator — Console Output</h1>
-<div id="controls">
+  <h1>HTML .zip Emulator</h1>
   <input type="file" id="zipInput" accept=".zip" />
-  <button id="playBtn" disabled>Play</button>
-  <button id="pauseBtn" disabled>Pause</button>
-  <button id="reloadBtn" disabled>Reload</button>
-</div>
-<div id="iframeContainer">
-  <iframe id="emulatorFrame" sandbox="allow-scripts allow-same-origin"></iframe>
-</div>
-<div id="status">Upload a ZIP file with your HTML game to get started.</div>
-<div id="output"></div>
+  <iframe id="preview"></iframe>
 
-<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-<script>
-  const zipInput = document.getElementById('zipInput');
-  const playBtn = document.getElementById('playBtn');
-  const pauseBtn = document.getElementById('pauseBtn');
-  const reloadBtn = document.getElementById('reloadBtn');
-  const iframe = document.getElementById('emulatorFrame');
-  const status = document.getElementById('status');
-  const output = document.getElementById('output');
+  <script>
+    const zipInput = document.getElementById('zipInput');
+    const preview = document.getElementById('preview');
 
-  let fileBlobs = {}, htmlContent = null, entryPoint = null, zipLoaded = false;
+    zipInput.addEventListener('change', async (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
 
-  const defaultHTML = `
-<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Default Play Screen</title></head><body style="margin:0;background:#222;color:#0f0;display:flex;justify-content:center;align-items:center;height:100vh;font-family:monospace;position:relative;">
-  <div id="box" style="width:100px;height:100px;background:#0f0;animation:spin 3s linear infinite;border-radius:10px;"></div>
-  <button onclick="console.log('Default button clicked')" style="position:absolute;bottom:20px;left:50%;transform:translateX(-50%);padding:10px 20px;font-size:1rem;background:#0f0;border:none;border-radius:5px;cursor:pointer;">Press me</button>
-  <style>@keyframes spin{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}</style>
-</body></html>`;
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const zipData = e.target.result;
+        const zip = await JSZip.loadAsync(zipData);
 
-  // Insert log hook at top of HTML content
-  function injectLogHook(html) {
-    const hook = `<script>console.log = function(...args){parent.postMessage({type:'log',args},'*');};window.onerror = function(msg, url, line){parent.postMessage({type:'error',msg,url,line},'*');};<\/script>`;
-    return html.replace(/<head>/i, `<head>${hook}`);
-  }
+        const files = {};
+        await Promise.all(
+          Object.keys(zip.files).map(async (filename) => {
+            const fileObj = zip.files[filename];
+            if (!fileObj.dir) {
+              files[filename] = await fileObj.async('blob');
+            }
+          })
+        );
 
-  function getBasePath(path) {
-    const parts = path.split('/'); parts.pop();
-    return parts.length ? parts.join('/') + '/' : '';
-  }
+        const htmlFile = Object.keys(files).find((f) => f.match(/index\.html$/i) || f.match(/\.html$/i));
+        if (!htmlFile) return alert("No HTML file found in ZIP.");
 
-  function normalizePath(path) {
-    const parts = [];
-    path.split('/').forEach(p => { if(p===''||p==='.') return; if(p==='..') parts.pop(); else parts.push(p); });
-    return parts.join('/');
-  }
+        const htmlText = await zip.files[htmlFile].async("text");
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(htmlText, "text/html");
 
-  function rewriteAssetUrls(html, base) {
-    html = html.replace(/(src|href)="(.*?)"/g, (m,a,u)=>{
-      if(!u||u.startsWith('http')||u.startsWith('data')||u.startsWith('#')) return m;
-      const norm = normalizePath(base+u);
-      return fileBlobs[norm] ? `${a}="${fileBlobs[norm]}"` : m;
+        const fixSrc = (el, attr) => {
+          const src = el.getAttribute(attr);
+          if (!src || src.startsWith('http') || src.startsWith('data:')) return;
+          const resolved = Object.keys(files).find(k => k.endsWith(src));
+          if (resolved) {
+            const blobUrl = URL.createObjectURL(files[resolved]);
+            el.setAttribute(attr, blobUrl);
+          }
+        };
+
+        doc.querySelectorAll('[src]').forEach(el => fixSrc(el, 'src'));
+        doc.querySelectorAll('[href]').forEach(el => fixSrc(el, 'href'));
+
+        const blob = new Blob([doc.documentElement.outerHTML], { type: 'text/html' });
+        preview.src = URL.createObjectURL(blob);
+      };
+
+      reader.readAsArrayBuffer(file);
     });
-    html = html.replace(/url\(["']?(.*?)["']?\)/g, (m,u)=>{
-      if(!u||u.startsWith('http')||u.startsWith('data')) return m;
-      const norm = normalizePath(base+u);
-      return fileBlobs[norm] ? `url(${fileBlobs[norm]})` : m;
-    });
-    return html;
-  }
-
-  async function prepareZip(file) {
-    status.textContent = 'Loading ZIP...'; output.innerHTML='';
-    Object.values(fileBlobs).forEach(URL.revokeObjectURL);
-    fileBlobs={}; htmlContent=null; entryPoint=null; zipLoaded=false;
-    try {
-      const zip = await JSZip.loadAsync(file);
-      status.textContent='ZIP loaded. Preparing files...';
-      const tasks = [];
-      zip.forEach((path, entry)=>{ if(!entry.dir) tasks.push(entry.async('blob').then(b=>fileBlobs[normalizePath(path)]=URL.createObjectURL(b))); });
-      await Promise.all(tasks);
-      entryPoint='index.html'; if(!fileBlobs[entryPoint]) entryPoint=Object.keys(fileBlobs).find(f=>f.endsWith('.html'));
-      if(!entryPoint) throw new Error('No HTML entry found');
-      const raw = await zip.file(entryPoint).async('text');
-      htmlContent = injectLogHook(rewriteAssetUrls(raw, getBasePath(entryPoint)));
-      status.textContent=`Ready: ${entryPoint}`; playBtn.disabled=false; pauseBtn.disabled=true; reloadBtn.disabled=false; zipLoaded=true;
-    } catch(e) {
-      htmlContent=injectLogHook(`<body><h1 style="color:red;">Error: ${e.message}</h1></body>`);
-      status.textContent='Error loading ZIP'; playBtn.disabled=false; pauseBtn.disabled=true; reloadBtn.disabled=true;
-    }
-  }
-
-  function setContent(html) { iframe.srcdoc=html; }
-
-  zipInput.onchange = e => e.target.files[0] && prepareZip(e.target.files[0]);
-
-  playBtn.onclick = () => {
-    setContent(zipLoaded?htmlContent:injectLogHook(defaultHTML));
-    status.textContent=zipLoaded?'Playing ZIP':'Playing default'; playBtn.disabled=true; pauseBtn.disabled=false;
-  };
-  pauseBtn.onclick = () => { setContent(defaultHTML); status.textContent='Paused'; playBtn.disabled=false; pauseBtn.disabled=true; };
-  reloadBtn.onclick = () => { setContent(zipLoaded?htmlContent:injectLogHook(defaultHTML)); status.textContent='Reloaded'; playBtn.disabled=true; pauseBtn.disabled=false; };
-
-  window.addEventListener('message', e => {
-    if(e.data.type==='log') e.data.args.forEach(a=>{
-      const p=document.createElement('p'); p.className='log-entry'; p.textContent='LOG: '+a; output.appendChild(p);
-    });
-    if(e.data.type==='error'){
-      const p=document.createElement('p'); p.className='log-entry'; p.textContent=`ERROR: ${e.data.msg} @ ${e.data.url}:${e.data.line}`; output.appendChild(p);
-    }
-    output.scrollTop=output.scrollHeight;
-  });
-
-  // Init with default screen
-  setContent(injectLogHook(defaultHTML)); playBtn.disabled=true; pauseBtn.disabled=true; reloadBtn.disabled=true;
-</script>
+  </script>
 </body>
 </html>
