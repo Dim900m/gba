@@ -8,23 +8,43 @@
   <style>
     body {
       font-family: sans-serif;
+      background: #1e1e2f;
+      color: #fff;
       display: flex;
       flex-direction: column;
       align-items: center;
       padding: 2rem;
     }
+    .device {
+      margin-top: 2rem;
+      width: 375px;
+      height: 667px;
+      border: 16px solid #333;
+      border-radius: 36px;
+      background: #000;
+      box-shadow: 0 0 20px rgba(0,0,0,0.6);
+      overflow: hidden;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
     iframe {
       width: 100%;
-      height: 600px;
-      border: 1px solid #ccc;
-      margin-top: 2rem;
+      height: 100%;
+      border: none;
+      background: white;
+    }
+    input[type="file"] {
+      margin-top: 1rem;
     }
   </style>
 </head>
 <body>
   <h1>HTML .zip Emulator</h1>
   <input type="file" id="zipInput" accept=".zip" />
-  <iframe id="preview"></iframe>
+  <div class="device">
+    <iframe id="preview" sandbox="allow-scripts allow-forms allow-same-origin"></iframe>
+  </div>
 
   <script>
     const zipInput = document.getElementById('zipInput');
