@@ -1,40 +1,98 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>GBA.js Emulator 🕹️</title>
+  <meta charset="UTF-8" />
+  <title>🔥 GBA Emulator (IodineGBA)</title>
   <style>
-    body { background: #111; color: #eee; text-align: center; padding: 20px; font-family: sans-serif; }
-    canvas { border: 3px solid #444; image-rendering: pixelated; margin-top: 20px; }
+    body {
+      background-color: #111;
+      color: white;
+      text-align: center;
+      font-family: sans-serif;
+    }
+    canvas {
+      border: 3px solid #444;
+      image-rendering: pixelated;
+      margin-top: 20px;
+    }
+    #upload-area {
+      padding: 20px;
+      border: 2px dashed #555;
+      margin: 20px;
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>
-  <h1>GBA Emulator 🕹️</h1>
-  <input type="file" id="upload" accept=".gba" />
-  <br>
-  <canvas id="canvas" width="240" height="160"></canvas>
+  <h1>🎮 GBA Emulator - Fully Working</h1>
+  <div id="upload-area">📁 Click or Drag & Drop a .gba or .zip file</div>
+  <input type="file" id="romInput" style="display:none" accept=".gba,.zip" />
+  <canvas id="emulator_target" width="240" height="160"></canvas>
 
-  <!-- GBA.js working script -->
-  <script src="https://cdn.jsdelivr.net/gh/grantgalitz/GameBoy-Online/js/gbajs.min.js"></script>
+  <!-- Dependencies -->
+  <script src="https://cdn.jsdelivr.net/gh/Endrift/IodineGBA/IodineGBA/IodineGBA.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/Endrift/IodineGBA/IodineGBA/core/GlueCode.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
   <script>
-    const canvas = document.getElementById("canvas");
-    const gba = new GameBoyAdvance();
-    gba.setCanvas(canvas);
+    const emulator = new IodineGBA();
+    const uploadArea = document.getElementById("upload-area");
+    const romInput = document.getElementById("romInput");
 
-    document.getElementById("upload").addEventListener("change", async (event) => {
-      const file = event.target.files[0];
-      if (!file) return;
+    // Set canvas target
+    emulator.setCanvas(document.getElementById("emulator_target"));
 
-      const reader = new FileReader();
-      reader.onload = function () {
-        const romBuffer = new Uint8Array(reader.result);
-        gba.loadRom(romBuffer);
-        gba.runStable(); // force-start
-      };
-      reader.readAsArrayBuffer(file);
+    // Enable audio
+    emulator.enableAudio();
+
+    // Setup emulator
+    emulator.play();
+
+    // Start ROM from buffer
+    function startROMFromBuffer(arrayBuffer) {
+      const byteArray = new Uint8Array(arrayBuffer);
+      emulator.attachROM(byteArray);
+    }
+
+    // Handle dropped or uploaded files
+    async function handleFile(file) {
+      const buffer = await file.arrayBuffer();
+
+      if (file.name.endsWith(".zip")) {
+        const zip = await JSZip.loadAsync(buffer);
+        const gbaFile = Object.values(zip.files).find(f => f.name.endsWith(".gba"));
+        if (!gbaFile) {
+          alert("❌ No .gba file found inside the ZIP.");
+          return;
+        }
+        const gbaBuffer = await gbaFile.async("arraybuffer");
+        startROMFromBuffer(gbaBuffer);
+      } else if (file.name.endsWith(".gba")) {
+        startROMFromBuffer(buffer);
+      } else {
+        alert("❌ Invalid file type.");
+      }
+    }
+
+    uploadArea.addEventListener("click", () => romInput.click());
+    romInput.addEventListener("change", e => {
+      if (e.target.files.length > 0) handleFile(e.target.files[0]);
     });
 
-    gba.keypad.eatKey = () => false;
+    uploadArea.addEventListener("dragover", e => {
+      e.preventDefault();
+      uploadArea.style.borderColor = "#0f0";
+    });
+
+    uploadArea.addEventListener("dragleave", () => {
+      uploadArea.style.borderColor = "#555";
+    });
+
+    uploadArea.addEventListener("drop", e => {
+      e.preventDefault();
+      uploadArea.style.borderColor = "#555";
+      if (e.dataTransfer.files.length > 0) handleFile(e.dataTransfer.files[0]);
+    });
   </script>
 </body>
 </html>
