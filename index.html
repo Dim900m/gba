@@ -3,66 +3,116 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>ZIP Emulator</title>
+<title>ZIP Emulator with Play Screen</title>
 <style>
-  body { font-family: Arial, sans-serif; margin: 1rem; }
-  #iframeContainer { margin-top: 1rem; width: 100%; height: 600px; border: 1px solid #ccc; }
+  body {
+    font-family: Arial, sans-serif;
+    margin: 1rem;
+    background: #121212;
+    color: #eee;
+  }
+  #controls {
+    margin-bottom: 1rem;
+  }
+  button {
+    margin-right: 10px;
+    padding: 0.5rem 1rem;
+    font-size: 1rem;
+    cursor: pointer;
+  }
+  #iframeContainer {
+    width: 100%;
+    max-width: 960px;
+    height: 540px;
+    border: 4px solid #0ff;
+    border-radius: 8px;
+    background: #000;
+    overflow: hidden;
+    box-shadow: 0 0 20px #0ff88caa;
+  }
+  iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+    background: #000;
+  }
+  #status {
+    margin-top: 10px;
+    font-weight: bold;
+  }
+  input[type="file"] {
+    color: #eee;
+  }
 </style>
 </head>
 <body>
 
-<h2>Upload ZIP and Run HTML from it</h2>
-<input type="file" id="zipInput" accept=".zip" />
-<div id="status"></div>
-<div id="iframeContainer">
-  <iframe id="emulatorFrame" sandbox="allow-scripts allow-same-origin" style="width:100%;height:100%;border:none"></iframe>
+<h1>ZIP Emulator — Play Screen</h1>
+<div id="controls">
+  <input type="file" id="zipInput" accept=".zip" />
+  <button id="playBtn" disabled>Play</button>
+  <button id="pauseBtn" disabled>Pause</button>
+  <button id="reloadBtn" disabled>Reload</button>
 </div>
+<div id="iframeContainer">
+  <iframe id="emulatorFrame" sandbox="allow-scripts allow-same-origin"></iframe>
+</div>
+<div id="status">Upload a ZIP file with your HTML game to get started.</div>
 
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <script>
-  const input = document.getElementById('zipInput');
-  const status = document.getElementById('status');
+  const zipInput = document.getElementById('zipInput');
+  const playBtn = document.getElementById('playBtn');
+  const pauseBtn = document.getElementById('pauseBtn');
+  const reloadBtn = document.getElementById('reloadBtn');
   const iframe = document.getElementById('emulatorFrame');
+  const status = document.getElementById('status');
 
-  input.addEventListener('change', async () => {
-    if (!input.files.length) return;
+  let fileBlobs = {};
+  let htmlBlobUrl = null;
+  let entryPoint = null;
+  let zipLoaded = false;
+
+  async function prepareZip(file) {
     status.textContent = 'Loading ZIP...';
-    const file = input.files[0];
+    fileBlobs = {};
+    htmlBlobUrl && URL.revokeObjectURL(htmlBlobUrl);
+    htmlBlobUrl = null;
+    entryPoint = null;
+    zipLoaded = false;
+
     const jszip = new JSZip();
 
     try {
       const zip = await jszip.loadAsync(file);
       status.textContent = 'ZIP loaded. Preparing files...';
 
-      // Create a map of filename => Blob URLs
-      const fileBlobs = {};
       for (const filename of Object.keys(zip.files)) {
         const zipEntry = zip.files[filename];
         if (!zipEntry.dir) {
-          // We read files as blobs (binary or text)
           const content = await zipEntry.async('blob');
           const blobUrl = URL.createObjectURL(content);
           fileBlobs[filename] = blobUrl;
         }
       }
 
-      // Find index.html or fallback to first HTML file
-      let entryPoint = 'index.html';
+      // Find index.html or first HTML file
+      entryPoint = 'index.html';
       if (!fileBlobs[entryPoint]) {
-        // find first .html file
         entryPoint = Object.keys(fileBlobs).find(f => f.endsWith('.html'));
       }
       if (!entryPoint) {
         status.textContent = 'No HTML file found in ZIP.';
+        playBtn.disabled = true;
+        pauseBtn.disabled = true;
+        reloadBtn.disabled = true;
         return;
       }
 
-      // Now we need to load index.html content and rewrite asset URLs to blob URLs
+      // Prepare HTML content with asset URLs replaced
       const indexEntry = zip.files[entryPoint];
       let htmlText = await indexEntry.async('text');
 
-      // Replace all references (src, href) inside HTML to blob URLs
-      // This is a basic regex and can be improved
       htmlText = htmlText.replace(/(src|href)="([^"]+)"/g, (match, attr, url) => {
         if (fileBlobs[url]) {
           return `${attr}="${fileBlobs[url]}"`;
@@ -70,16 +120,52 @@
         return match;
       });
 
-      // Load HTML into iframe using Blob URL
       const htmlBlob = new Blob([htmlText], { type: 'text/html' });
-      const htmlBlobUrl = URL.createObjectURL(htmlBlob);
+      htmlBlobUrl = URL.createObjectURL(htmlBlob);
 
-      iframe.src = htmlBlobUrl;
-      status.textContent = `Loaded ${entryPoint} successfully.`;
+      status.textContent = `Ready to play: ${entryPoint}`;
+      playBtn.disabled = false;
+      pauseBtn.disabled = true;
+      reloadBtn.disabled = true;
+      zipLoaded = true;
 
     } catch (e) {
       status.textContent = 'Error loading ZIP: ' + e.message;
+      playBtn.disabled = true;
+      pauseBtn.disabled = true;
+      reloadBtn.disabled = true;
     }
+  }
+
+  zipInput.addEventListener('change', () => {
+    if (!zipInput.files.length) return;
+    prepareZip(zipInput.files[0]);
+  });
+
+  playBtn.addEventListener('click', () => {
+    if (!zipLoaded || !htmlBlobUrl) return;
+    iframe.src = htmlBlobUrl;
+    status.textContent = `Playing: ${entryPoint}`;
+    playBtn.disabled = true;
+    pauseBtn.disabled = false;
+    reloadBtn.disabled = false;
+  });
+
+  pauseBtn.addEventListener('click', () => {
+    iframe.src = 'about:blank';
+    status.textContent = `Paused.`;
+    playBtn.disabled = false;
+    pauseBtn.disabled = true;
+    reloadBtn.disabled = true;
+  });
+
+  reloadBtn.addEventListener('click', () => {
+    if (!zipLoaded || !htmlBlobUrl) return;
+    iframe.src = '';
+    setTimeout(() => {
+      iframe.src = htmlBlobUrl;
+      status.textContent = `Reloaded: ${entryPoint}`;
+    }, 50);
   });
 </script>
 
