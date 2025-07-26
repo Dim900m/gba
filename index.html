@@ -1,98 +1,87 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>🔥 GBA Emulator (IodineGBA)</title>
-  <style>
-    body {
-      background-color: #111;
-      color: white;
-      text-align: center;
-      font-family: sans-serif;
-    }
-    canvas {
-      border: 3px solid #444;
-      image-rendering: pixelated;
-      margin-top: 20px;
-    }
-    #upload-area {
-      padding: 20px;
-      border: 2px dashed #555;
-      margin: 20px;
-      cursor: pointer;
-    }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ZIP Emulator</title>
+<style>
+  body { font-family: Arial, sans-serif; margin: 1rem; }
+  #iframeContainer { margin-top: 1rem; width: 100%; height: 600px; border: 1px solid #ccc; }
+</style>
 </head>
 <body>
-  <h1>🎮 GBA Emulator - Fully Working</h1>
-  <div id="upload-area">📁 Click or Drag & Drop a .gba or .zip file</div>
-  <input type="file" id="romInput" style="display:none" accept=".gba,.zip" />
-  <canvas id="emulator_target" width="240" height="160"></canvas>
 
-  <!-- Dependencies -->
-  <script src="https://cdn.jsdelivr.net/gh/Endrift/IodineGBA/IodineGBA/IodineGBA.js"></script>
-  <script src="https://cdn.jsdelivr.net/gh/Endrift/IodineGBA/IodineGBA/core/GlueCode.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<h2>Upload ZIP and Run HTML from it</h2>
+<input type="file" id="zipInput" accept=".zip" />
+<div id="status"></div>
+<div id="iframeContainer">
+  <iframe id="emulatorFrame" sandbox="allow-scripts allow-same-origin" style="width:100%;height:100%;border:none"></iframe>
+</div>
 
-  <script>
-    const emulator = new IodineGBA();
-    const uploadArea = document.getElementById("upload-area");
-    const romInput = document.getElementById("romInput");
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script>
+  const input = document.getElementById('zipInput');
+  const status = document.getElementById('status');
+  const iframe = document.getElementById('emulatorFrame');
 
-    // Set canvas target
-    emulator.setCanvas(document.getElementById("emulator_target"));
+  input.addEventListener('change', async () => {
+    if (!input.files.length) return;
+    status.textContent = 'Loading ZIP...';
+    const file = input.files[0];
+    const jszip = new JSZip();
 
-    // Enable audio
-    emulator.enableAudio();
+    try {
+      const zip = await jszip.loadAsync(file);
+      status.textContent = 'ZIP loaded. Preparing files...';
 
-    // Setup emulator
-    emulator.play();
-
-    // Start ROM from buffer
-    function startROMFromBuffer(arrayBuffer) {
-      const byteArray = new Uint8Array(arrayBuffer);
-      emulator.attachROM(byteArray);
-    }
-
-    // Handle dropped or uploaded files
-    async function handleFile(file) {
-      const buffer = await file.arrayBuffer();
-
-      if (file.name.endsWith(".zip")) {
-        const zip = await JSZip.loadAsync(buffer);
-        const gbaFile = Object.values(zip.files).find(f => f.name.endsWith(".gba"));
-        if (!gbaFile) {
-          alert("❌ No .gba file found inside the ZIP.");
-          return;
+      // Create a map of filename => Blob URLs
+      const fileBlobs = {};
+      for (const filename of Object.keys(zip.files)) {
+        const zipEntry = zip.files[filename];
+        if (!zipEntry.dir) {
+          // We read files as blobs (binary or text)
+          const content = await zipEntry.async('blob');
+          const blobUrl = URL.createObjectURL(content);
+          fileBlobs[filename] = blobUrl;
         }
-        const gbaBuffer = await gbaFile.async("arraybuffer");
-        startROMFromBuffer(gbaBuffer);
-      } else if (file.name.endsWith(".gba")) {
-        startROMFromBuffer(buffer);
-      } else {
-        alert("❌ Invalid file type.");
       }
+
+      // Find index.html or fallback to first HTML file
+      let entryPoint = 'index.html';
+      if (!fileBlobs[entryPoint]) {
+        // find first .html file
+        entryPoint = Object.keys(fileBlobs).find(f => f.endsWith('.html'));
+      }
+      if (!entryPoint) {
+        status.textContent = 'No HTML file found in ZIP.';
+        return;
+      }
+
+      // Now we need to load index.html content and rewrite asset URLs to blob URLs
+      const indexEntry = zip.files[entryPoint];
+      let htmlText = await indexEntry.async('text');
+
+      // Replace all references (src, href) inside HTML to blob URLs
+      // This is a basic regex and can be improved
+      htmlText = htmlText.replace(/(src|href)="([^"]+)"/g, (match, attr, url) => {
+        if (fileBlobs[url]) {
+          return `${attr}="${fileBlobs[url]}"`;
+        }
+        return match;
+      });
+
+      // Load HTML into iframe using Blob URL
+      const htmlBlob = new Blob([htmlText], { type: 'text/html' });
+      const htmlBlobUrl = URL.createObjectURL(htmlBlob);
+
+      iframe.src = htmlBlobUrl;
+      status.textContent = `Loaded ${entryPoint} successfully.`;
+
+    } catch (e) {
+      status.textContent = 'Error loading ZIP: ' + e.message;
     }
+  });
+</script>
 
-    uploadArea.addEventListener("click", () => romInput.click());
-    romInput.addEventListener("change", e => {
-      if (e.target.files.length > 0) handleFile(e.target.files[0]);
-    });
-
-    uploadArea.addEventListener("dragover", e => {
-      e.preventDefault();
-      uploadArea.style.borderColor = "#0f0";
-    });
-
-    uploadArea.addEventListener("dragleave", () => {
-      uploadArea.style.borderColor = "#555";
-    });
-
-    uploadArea.addEventListener("drop", e => {
-      e.preventDefault();
-      uploadArea.style.borderColor = "#555";
-      if (e.dataTransfer.files.length > 0) handleFile(e.dataTransfer.files[0]);
-    });
-  </script>
 </body>
 </html>
