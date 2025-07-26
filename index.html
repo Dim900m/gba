@@ -1,100 +1,54 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>HTML ZIP Emulator</title>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-  <style>
-    body {
-      font-family: sans-serif;
-      background: #1e1e2f;
-      color: #fff;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 2rem;
-    }
-    .device {
-      margin-top: 2rem;
-      width: 375px;
-      height: 667px;
-      border: 16px solid #333;
-      border-radius: 36px;
-      background: #000;
-      box-shadow: 0 0 20px rgba(0,0,0,0.6);
-      overflow: hidden;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-    }
-    iframe {
-      width: 100%;
-      height: 100%;
-      border: none;
-      background: white;
-    }
-    input[type="file"] {
-      margin-top: 1rem;
-    }
-  </style>
+  <meta charset="UTF‑8">
+  <title>LeafGreen Emulator</title>
 </head>
 <body>
-  <h1>HTML .zip Emulator</h1>
-  <input type="file" id="zipInput" accept=".zip" />
-  <div class="device">
-    <iframe id="preview" sandbox="allow-scripts allow-forms allow-same-origin"></iframe>
+  <h1>GBA LeafGreen Emulator</h1>
+  <canvas id="screen" width="480" height="320"></canvas>
+  <div>
+    <input type="file" id="romInput" accept=".gba">
+    <button id="pauseBtn">Pause</button>
+    <button id="resetBtn">Reset</button>
+    <button id="saveBtn">Download Save</button>
+    <input type="file" id="loadSave" style="display:none">
   </div>
-
+  <script src="js/util.js"></script>
+  <!-- include all GBA.js modules: core.js, arm.js, video.js, audio.js, keypad.js, etc. -->
+  <script src="js/gba.js"></script>
   <script>
-    const zipInput = document.getElementById('zipInput');
-    const preview = document.getElementById('preview');
+    const canvas = document.getElementById('screen');
+    const emulator = new GameBoyAdvance(canvas);
+    const romInput = document.getElementById('romInput');
+    const pauseBtn = document.getElementById('pauseBtn');
+    const resetBtn = document.getElementById('resetBtn');
+    const saveBtn = document.getElementById('saveBtn');
+    const loadSave = document.getElementById('loadSave');
 
-    zipInput.addEventListener('change', async (event) => {
-      const file = event.target.files[0];
-      if (!file) return;
-
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        const zipData = e.target.result;
-        const zip = await JSZip.loadAsync(zipData);
-
-        const files = {};
-        await Promise.all(
-          Object.keys(zip.files).map(async (filename) => {
-            const fileObj = zip.files[filename];
-            if (!fileObj.dir) {
-              files[filename] = await fileObj.async('blob');
-            }
-          })
-        );
-
-        const htmlFile = Object.keys(files).find((f) => f.match(/index\.html$/i) || f.match(/\.html$/i));
-        if (!htmlFile) return alert("No HTML file found in ZIP.");
-
-        const htmlText = await zip.files[htmlFile].async("text");
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(htmlText, "text/html");
-
-        const fixSrc = (el, attr) => {
-          const src = el.getAttribute(attr);
-          if (!src || src.startsWith('http') || src.startsWith('data:')) return;
-          const resolved = Object.keys(files).find(k => k.endsWith(src));
-          if (resolved) {
-            const blobUrl = URL.createObjectURL(files[resolved]);
-            el.setAttribute(attr, blobUrl);
-          }
-        };
-
-        doc.querySelectorAll('[src]').forEach(el => fixSrc(el, 'src'));
-        doc.querySelectorAll('[href]').forEach(el => fixSrc(el, 'href'));
-
-        const blob = new Blob([doc.documentElement.outerHTML], { type: 'text/html' });
-        preview.src = URL.createObjectURL(blob);
-      };
-
-      reader.readAsArrayBuffer(file);
-    });
+    romInput.onchange = async e => {
+      const rom = await e.target.files[0].arrayBuffer();
+      emulator.loadBios('bios.bin');       // preload BIOS
+      emulator.loadRom(rom);               // start game
+      emulator.play();
+    };
+    pauseBtn.onclick = () => emulator.pause();
+    resetBtn.onclick = () => emulator.reset();
+    saveBtn.onclick = () => {
+      const sav = emulator.getSaveData();
+      const blob = new Blob([sav], { type: 'application/octet-stream' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'leafgreen.sav';
+      a.click();
+      URL.revokeObjectURL(url);
+    };
+    loadSave.onchange = async e => {
+      const data = await e.target.files[0].arrayBuffer();
+      emulator.loadSaveData(data);
+    };
+    document.addEventListener('keydown', e => emulator.keyDown(e));
+    document.addEventListener('keyup', e => emulator.keyUp(e));
   </script>
 </body>
 </html>
