@@ -1,107 +1,39 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8" />
-  <title>GBA Emulator + Zip Loader + Controls</title>
+  <title>GBA Emulator - Play Pokemon</title>
   <style>
-    #screen {
-      image-rendering: pixelated;
-      width: 480px;
-      height: 320px;
-      border: 2px solid black;
-    }
-    .controls {
-      display: grid;
-      grid-template-columns: repeat(4, 60px);
-      gap: 5px;
-      margin-top: 10px;
-    }
-    .btn {
-      width: 60px; height: 60px;
-      background: #ccc; border-radius: 6px;
-      text-align: center; line-height: 60px; user-select: none;
-    }
+    body { font-family: sans-serif; background: #111; color: #eee; text-align: center; }
+    canvas { border: 2px solid #fff; image-rendering: pixelated; }
+    input { margin: 10px; }
   </style>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-  <script src="https://unpkg.com/jsgba@latest/dist/jsgba.min.js"></script>
 </head>
 <body>
-  <h1>GBA Emulator (ZIP + Controls)</h1>
-  <input type="file" id="zipfile" accept=".zip" />
-  <p id="status">Load a zipped .gba ROM to start.</p>
+  <h1>GBA Emulator</h1>
+  <input type="file" id="romFile" accept=".zip" />
+  <br/>
   <canvas id="screen" width="240" height="160"></canvas>
-
-  <div class="controls">
-    <div class="btn" data-button="Up">↑</div>
-    <div class="btn" data-button="Down">↓</div>
-    <div class="btn" data-button="Left">←</div>
-    <div class="btn" data-button="Right">→</div>
-    <div class="btn" data-button="A">A</div>
-    <div class="btn" data-button="B">B</div>
-    <div class="btn" data-button="Start">Start</div>
-    <div class="btn" data-button="Select">Select</div>
-  </div>
-
+  <script src="https://unpkg.com/jszip/dist/jszip.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/endrift/gbajs@master/gbajs.js"></script>
   <script>
-    const status = document.getElementById('status');
     const canvas = document.getElementById('screen');
-    const gba = new jsGBA();
-    gba.setScreenCanvas(canvas);
-    gba.pause();
+    let gba;
 
-    const keyMap = {
-      ArrowUp:      gba.keypad.UP,
-      ArrowDown:    gba.keypad.DOWN,
-      ArrowLeft:    gba.keypad.LEFT,
-      ArrowRight:   gba.keypad.RIGHT,
-      x:            gba.keypad.A,
-      z:            gba.keypad.B,
-      Enter:        gba.keypad.START,
-      Shift:        gba.keypad.SELECT
-    };
-
-    function handleKey(evt, down) {
-      const code = evt.key;
-      const pad = keyMap[code];
-      if (pad !== undefined) {
-        if (down) gba.keypad.press(pad);
-        else gba.keypad.release(pad);
-        evt.preventDefault();
-      }
-    }
-    window.addEventListener('keydown', e => handleKey(e, true));
-    window.addEventListener('keyup', e => handleKey(e, false));
-
-    document.querySelectorAll('.btn').forEach(el => {
-      const b = el.dataset.button;
-      el.addEventListener('pointerdown', () => gba.keypad.press(gba.keypad[b.toUpperCase()]));
-      el.addEventListener('pointerup',   () => gba.keypad.release(gba.keypad[b.toUpperCase()]));
-      el.addEventListener('pointerleave',() => gba.keypad.release(gba.keypad[b.toUpperCase()]));
-    });
-
-    document.getElementById('zipfile').addEventListener('change', async event => {
+    document.getElementById('romFile').addEventListener('change', async (event) => {
       const file = event.target.files[0];
-      if (!file) return;
-      status.textContent = 'Reading zip file...';
+      if (!file) return alert("No file selected.");
+      if (!file.name.endsWith('.zip')) return alert("Only .zip files are supported.");
 
-      try {
-        const zip = await JSZip.loadAsync(file);
-        const gbaName = Object.keys(zip.files).find(n => n.toLowerCase().endsWith('.gba'));
-        if (!gbaName) {
-          status.textContent = 'No .gba file in zip.';
-          return;
-        }
+      const zip = await JSZip.loadAsync(file);
+      const gbaFile = Object.keys(zip.files).find(name => name.endsWith('.gba'));
+      if (!gbaFile) return alert("No .gba file found in zip.");
 
-        status.textContent = `Extracting ${gbaName}...`;
-        const buff = await zip.file(gbaName).async('arraybuffer');
-        status.textContent = `Loading ROM (${buff.byteLength} bytes)...`;
-        gba.loadROM(new Uint8Array(buff));
-        gba.resume();
-        status.textContent = `Running ${gbaName}`;
-      } catch (err) {
-        status.textContent = 'Error: ' + err.message;
-        console.error(err);
-      }
+      const romData = await zip.files[gbaFile].async("uint8array");
+
+      gba = new GameBoyAdvance();
+      gba.setCanvas(canvas);
+      gba.loadRomFromByteArray(romData);
+      gba.runStable();
     });
   </script>
 </body>
