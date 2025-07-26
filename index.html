@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>ZIP Emulator with Inline srcdoc Play Screen</title>
+<title>ZIP Emulator with Default Play Screen</title>
 <style>
   body {
     font-family: Arial, sans-serif;
@@ -61,7 +61,7 @@
 </head>
 <body>
 
-<h1>ZIP Emulator — srcdoc Play Screen</h1>
+<h1>ZIP Emulator — Default Play Screen Included</h1>
 <div id="controls">
   <input type="file" id="zipInput" accept=".zip" />
   <button id="playBtn" disabled>Play</button>
@@ -90,6 +90,36 @@
   let htmlContent = null;
   let entryPoint = null;
   let zipLoaded = false;
+
+  // Default fallback HTML with some simple working code
+  const defaultHTML = `
+  <!DOCTYPE html>
+  <html lang="en">
+  <head>
+  <meta charset="UTF-8" />
+  <title>Default Play Screen</title>
+  <style>
+    body { margin: 0; background: #222; color: #0f0; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: monospace; position: relative; }
+    #box {
+      width: 100px; height: 100px; background: #0f0; animation: spin 3s linear infinite;
+      border-radius: 10px;
+    }
+    @keyframes spin {
+      from { transform: rotate(0deg);}
+      to { transform: rotate(360deg);}
+    }
+    button {
+      position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+      padding: 10px 20px; font-size: 1rem; background: #0f0; border: none; border-radius: 5px; cursor: pointer;
+    }
+  </style>
+  </head>
+  <body>
+    <div id="box"></div>
+    <button onclick="alert('You pressed the button!')">Press me</button>
+  </body>
+  </html>
+  `;
 
   function getBasePath(path) {
     const parts = path.split('/');
@@ -196,71 +226,79 @@
 
       let rawHtml = await indexEntry.async('text');
       const basePath = getBasePath(entryPoint);
-      htmlContent = rewriteAssetUrls(rawHtml, basePath);
 
+      htmlContent = rewriteAssetUrls(rawHtml, basePath);
       status.textContent = `Ready to play: ${entryPoint}`;
+
       playBtn.disabled = false;
       pauseBtn.disabled = true;
-      reloadBtn.disabled = true;
+      reloadBtn.disabled = false;
       zipLoaded = true;
-
-    } catch (e) {
-      htmlContent = `<body style="color:#f00; background:#000; display:flex; justify-content:center; align-items:center; height:100vh; font-family:sans-serif;"><h1>Error loading ZIP:</h1><pre>${e.message}</pre></body>`;
-      status.textContent = 'Error loading ZIP: ' + e.message;
+    } catch (err) {
+      status.textContent = 'Error reading ZIP: ' + err.message;
       playBtn.disabled = true;
       pauseBtn.disabled = true;
       reloadBtn.disabled = true;
-      setIframeContent(htmlContent);
+      setIframeContent(`<body style="color:#f00; background:#000; display:flex; justify-content:center; align-items:center; height:100vh; font-family:sans-serif;"><h1>Error loading ZIP file.</h1><p>${err.message}</p></body>`);
     }
   }
 
   function setIframeContent(content) {
-    // Use srcdoc to load inline HTML to avoid blob URL issues
-    iframe.srcdoc = content;
+    iframe.srcdoc = content || defaultHTML;
   }
 
-  zipInput.addEventListener('change', () => {
-    if (!zipInput.files.length) return;
-    prepareZip(zipInput.files[0]);
-  });
-
-  playBtn.addEventListener('click', () => {
-    if (!zipLoaded || !htmlContent) return;
-    errorOverlay.style.display = 'none';
-    setIframeContent(htmlContent);
-    status.textContent = `Playing: ${entryPoint}`;
-    playBtn.disabled = true;
-    pauseBtn.disabled = false;
-    reloadBtn.disabled = false;
-  });
-
-  pauseBtn.addEventListener('click', () => {
-    iframe.srcdoc = '';
-    status.textContent = `Paused.`;
-    playBtn.disabled = false;
-    pauseBtn.disabled = true;
-    reloadBtn.disabled = true;
-  });
-
-  reloadBtn.addEventListener('click', () => {
-    if (!zipLoaded || !htmlContent) return;
-    errorOverlay.style.display = 'none';
-    setIframeContent('');
-    setTimeout(() => {
+  playBtn.onclick = () => {
+    if (zipLoaded) {
       setIframeContent(htmlContent);
-      status.textContent = `Reloaded: ${entryPoint}`;
-    }, 50);
-  });
+      pauseBtn.disabled = false;
+      playBtn.disabled = true;
+      status.textContent = 'Playing ZIP content...';
+      errorOverlay.style.display = 'none';
+    } else {
+      setIframeContent(defaultHTML);
+      status.textContent = 'Playing default screen.';
+      pauseBtn.disabled = false;
+      playBtn.disabled = true;
+      errorOverlay.style.display = 'none';
+    }
+  };
 
-  iframe.addEventListener('error', () => {
-    errorOverlay.textContent = 'Failed to load content inside the emulator.';
-    errorOverlay.style.display = 'flex';
-  });
-
-  iframe.addEventListener('load', () => {
+  pauseBtn.onclick = () => {
+    // To "pause" we reload default blank or default page
+    setIframeContent(defaultHTML);
+    pauseBtn.disabled = true;
+    playBtn.disabled = false;
+    status.textContent = 'Paused.';
     errorOverlay.style.display = 'none';
-  });
-</script>
+  };
 
+  reloadBtn.onclick = () => {
+    if (zipLoaded) {
+      setIframeContent(htmlContent);
+      status.textContent = 'Reloaded ZIP content.';
+      playBtn.disabled = true;
+      pauseBtn.disabled = false;
+      errorOverlay.style.display = 'none';
+    } else {
+      setIframeContent(defaultHTML);
+      status.textContent = 'Reloaded default screen.';
+      playBtn.disabled = true;
+      pauseBtn.disabled = false;
+      errorOverlay.style.display = 'none';
+    }
+  };
+
+  zipInput.onchange = (e) => {
+    if (e.target.files.length) {
+      prepareZip(e.target.files[0]);
+    }
+  };
+
+  // Initialize iframe with default screen
+  setIframeContent(defaultHTML);
+  playBtn.disabled = true;
+  pauseBtn.disabled = true;
+  reloadBtn.disabled = true;
+</script>
 </body>
 </html>
