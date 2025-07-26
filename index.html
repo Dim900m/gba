@@ -2,70 +2,184 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>GBA Emulator 🕹️</title>
+  <title>GBA Emulator Deluxe 🎮</title>
   <style>
     body {
-      font-family: sans-serif;
-      background: #111;
+      background-color: #1e1e1e;
       color: #eee;
+      font-family: 'Segoe UI', sans-serif;
       text-align: center;
-      padding: 20px;
+      margin: 0;
+      padding: 0;
     }
-    canvas {
-      border: 3px solid #444;
+
+    h1 {
       margin-top: 20px;
+      font-size: 2em;
+    }
+
+    #dropzone {
+      border: 2px dashed #555;
+      padding: 30px;
+      margin: 20px;
+      color: #bbb;
+      border-radius: 10px;
+      cursor: pointer;
+    }
+
+    canvas {
+      margin: 10px auto;
+      border: 3px solid #444;
+      display: block;
       image-rendering: pixelated;
     }
-    input[type="file"] {
-      margin-top: 20px;
+
+    #fileInput {
+      display: none;
+    }
+
+    .mobile-controls {
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+
+    .button {
+      background: #444;
+      color: white;
+      border-radius: 10px;
+      padding: 15px;
+      margin: 5px;
+      font-size: 18px;
+      width: 60px;
+      text-align: center;
+      user-select: none;
+    }
+
+    #status {
+      margin: 10px;
+    }
+
+    @media (max-width: 600px) {
+      canvas {
+        width: 95%;
+        height: auto;
+      }
     }
   </style>
 </head>
 <body>
-  <h1>GBA Emulator 🕹️</h1>
-  <input type="file" id="romZip" accept=".zip" />
-  <br/>
+  <h1>🕹️ GBA Emulator Deluxe</h1>
+
+  <div id="dropzone">📥 Drag & drop a .zip or .gba file here<br>or <label for="fileInput" style="text-decoration: underline; cursor: pointer;">click to upload</label></div>
+  <input type="file" id="fileInput" accept=".zip,.gba">
+
+  <div id="status">Waiting for ROM...</div>
   <canvas id="screen" width="240" height="160"></canvas>
 
-  <!-- JSZip Library -->
+  <div class="mobile-controls">
+    <div class="button" data-key="ArrowLeft">←</div>
+    <div class="button" data-key="ArrowRight">→</div>
+    <div class="button" data-key="ArrowUp">↑</div>
+    <div class="button" data-key="ArrowDown">↓</div>
+    <div class="button" data-key="Z">A</div>
+    <div class="button" data-key="X">B</div>
+    <div class="button" data-key="Enter">Start</div>
+    <div class="button" data-key="Backspace">Select</div>
+  </div>
+
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-
-  <!-- GBA.js Emulator -->
   <script src="https://cdn.jsdelivr.net/gh/endrift/gbajs@master/gbajs/gba.js"></script>
-
   <script>
     const canvas = document.getElementById('screen');
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('fileInput');
+    const status = document.getElementById('status');
     const gba = new GameBoyAdvance();
     gba.setCanvas(canvas);
 
-    const fileInput = document.getElementById('romZip');
+    const STORAGE_KEY = 'gba-save';
 
-    fileInput.addEventListener('change', async (event) => {
-      const file = event.target.files[0];
-      if (!file) return;
+    function showStatus(msg) {
+      status.textContent = msg;
+    }
 
-      try {
-        const zip = await JSZip.loadAsync(file);
-        const gbaFile = Object.keys(zip.files).find(name => name.endsWith('.gba'));
-
-        if (!gbaFile) {
-          alert('No .gba file found in the zip!');
-          return;
-        }
-
-        const romData = await zip.files[gbaFile].async('uint8array');
-
-        gba.loadRomFromFile(new Blob([romData]));
-      } catch (e) {
-        console.error('Failed to load ROM:', e);
-        alert('Error loading ZIP file');
+    function saveGame() {
+      const save = gba.mmu.save;
+      if (save) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(save)));
+        console.log('Game saved');
       }
+    }
+
+    function loadSave() {
+      const saveData = localStorage.getItem(STORAGE_KEY);
+      if (saveData) {
+        gba.mmu.loadSavedata(new Uint8Array(JSON.parse(saveData)));
+        console.log('Save loaded');
+      }
+    }
+
+    async function handleFile(file) {
+      const arrayBuffer = await file.arrayBuffer();
+      let romBuffer;
+
+      if (file.name.endsWith('.zip')) {
+        const zip = await JSZip.loadAsync(arrayBuffer);
+        const gbaEntry = Object.values(zip.files).find(f => f.name.endsWith('.gba'));
+
+        if (!gbaEntry) return showStatus('❌ .gba file not found in zip!');
+        romBuffer = await gbaEntry.async('uint8array');
+      } else if (file.name.endsWith('.gba')) {
+        romBuffer = new Uint8Array(arrayBuffer);
+      } else {
+        return showStatus('❌ Unsupported file type!');
+      }
+
+      showStatus(`🎮 Loaded: ${file.name}`);
+      gba.loadRomFromFile(new Blob([romBuffer]));
+    }
+
+    fileInput.addEventListener('change', (e) => {
+      if (e.target.files[0]) handleFile(e.target.files[0]);
     });
 
-    // Optional: custom keyboard mapping
-    gba.keypad.eatKey = function(keyCode) {
-      return false; // Prevents keys from getting swallowed
-    };
+    dropzone.addEventListener('click', () => fileInput.click());
+
+    dropzone.addEventListener('dragover', e => {
+      e.preventDefault();
+      dropzone.style.borderColor = '#0f0';
+    });
+
+    dropzone.addEventListener('dragleave', () => {
+      dropzone.style.borderColor = '#555';
+    });
+
+    dropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropzone.style.borderColor = '#555';
+      const file = e.dataTransfer.files[0];
+      if (file) handleFile(file);
+    });
+
+    // Mobile Touch Buttons
+    document.querySelectorAll('.button').forEach(btn => {
+      btn.addEventListener('touchstart', () => {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: btn.dataset.key }));
+      });
+      btn.addEventListener('touchend', () => {
+        window.dispatchEvent(new KeyboardEvent('keyup', { key: btn.dataset.key }));
+      });
+    });
+
+    gba.keypad.eatKey = () => false;
+
+    // Save game on unload
+    window.addEventListener('beforeunload', saveGame);
+
+    // Load save after a short delay
+    setTimeout(loadSave, 2000);
   </script>
 </body>
 </html>
