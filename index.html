@@ -3,38 +3,104 @@
 <head>
   <title>GBA Emulator - Play Pokemon</title>
   <style>
-    body { font-family: sans-serif; background: #111; color: #eee; text-align: center; }
-    canvas { border: 2px solid #fff; image-rendering: pixelated; }
-    input { margin: 10px; }
+    body {
+      margin: 0;
+      background-color: #000;
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      font-family: sans-serif;
+    }
+    header {
+      background-color: #222;
+      width: 100%;
+      padding: 10px;
+      text-align: center;
+      font-size: 24px;
+    }
+    canvas {
+      border: 2px solid #fff;
+      image-rendering: pixelated;
+      margin: 20px 0;
+    }
+    .controls {
+      margin: 10px;
+    }
+    .controls button {
+      margin: 0 5px;
+      padding: 8px 16px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+    input[type="file"] {
+      margin: 10px;
+    }
   </style>
 </head>
 <body>
-  <h1>GBA Emulator</h1>
+  <header>GBA Emulator</header>
   <input type="file" id="romFile" accept=".zip" />
-  <br/>
   <canvas id="screen" width="240" height="160"></canvas>
+  <div class="controls">
+    <button onclick="pauseGame()">Pause</button>
+    <button onclick="resumeGame()">Resume</button>
+    <button onclick="saveGame()">Save</button>
+    <button onclick="loadGame()">Load</button>
+  </div>
+
   <script src="https://unpkg.com/jszip/dist/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/gh/endrift/gbajs@master/gbajs.js"></script>
   <script>
     const canvas = document.getElementById('screen');
-    let gba;
+    let gba = new GameBoyAdvance();
+    gba.setCanvas(canvas);
+    let saveData = null;
 
     document.getElementById('romFile').addEventListener('change', async (event) => {
       const file = event.target.files[0];
-      if (!file) return alert("No file selected.");
-      if (!file.name.endsWith('.zip')) return alert("Only .zip files are supported.");
-
-      const zip = await JSZip.loadAsync(file);
-      const gbaFile = Object.keys(zip.files).find(name => name.endsWith('.gba'));
-      if (!gbaFile) return alert("No .gba file found in zip.");
-
-      const romData = await zip.files[gbaFile].async("uint8array");
-
-      gba = new GameBoyAdvance();
-      gba.setCanvas(canvas);
-      gba.loadRomFromByteArray(romData);
-      gba.runStable();
+      if (!file || !file.name.endsWith('.zip')) {
+        alert("Please upload a .zip file containing a .gba ROM.");
+        return;
+      }
+      try {
+        const zip = await JSZip.loadAsync(file);
+        const gbaFileName = Object.keys(zip.files).find(name => name.endsWith('.gba'));
+        if (!gbaFileName) {
+          alert("No .gba file found in the zip archive.");
+          return;
+        }
+        const romData = await zip.files[gbaFileName].async("uint8array");
+        gba.reset();
+        gba.loadRomFromByteArray(romData);
+        gba.runStable();
+      } catch (err) {
+        console.error("Error loading ROM:", err);
+        alert("Failed to load ROM.");
+      }
     });
+
+    function pauseGame() {
+      gba.pause();
+    }
+
+    function resumeGame() {
+      gba.runStable();
+    }
+
+    function saveGame() {
+      saveData = gba.save();
+      alert("Game saved!");
+    }
+
+    function loadGame() {
+      if (saveData) {
+        gba.load(saveData);
+        alert("Game loaded!");
+      } else {
+        alert("No save data available.");
+      }
+    }
   </script>
 </body>
 </html>
