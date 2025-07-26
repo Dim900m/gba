@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Improved ZIP Emulator with Play Screen</title>
+<title>ZIP Emulator with Inline srcdoc Play Screen</title>
 <style>
   body {
     font-family: Arial, sans-serif;
@@ -61,7 +61,7 @@
 </head>
 <body>
 
-<h1>ZIP Emulator — Improved Play Screen</h1>
+<h1>ZIP Emulator — srcdoc Play Screen</h1>
 <div id="controls">
   <input type="file" id="zipInput" accept=".zip" />
   <button id="playBtn" disabled>Play</button>
@@ -87,20 +87,17 @@
   const errorOverlay = document.getElementById('errorOverlay');
 
   let fileBlobs = {};
-  let htmlBlobUrl = null;
+  let htmlContent = null;
   let entryPoint = null;
   let zipLoaded = false;
 
-  // Utility to get base path of file in ZIP, e.g. "folder/index.html" => "folder/"
   function getBasePath(path) {
     const parts = path.split('/');
     parts.pop();
     return parts.length ? parts.join('/') + '/' : '';
   }
 
-  // Rewrite URLs inside HTML to point to blob URLs, respecting base path of HTML file
   function rewriteAssetUrls(htmlText, basePath) {
-    // Replace src, href attributes
     htmlText = htmlText.replace(/(src|href)\s*=\s*"(.*?)"/g, (match, attr, url) => {
       if (!url || url.startsWith('http') || url.startsWith('data:') || url.startsWith('#')) return match;
       const normalizedPath = normalizePath(basePath + url);
@@ -110,7 +107,6 @@
       return match;
     });
 
-    // Replace srcset (for images with multiple sources)
     htmlText = htmlText.replace(/srcset\s*=\s*"(.*?)"/g, (match, urls) => {
       const parts = urls.split(',');
       const newParts = parts.map(part => {
@@ -124,7 +120,6 @@
       return `srcset="${newParts.join(', ')}"`;
     });
 
-    // Replace url(...) in inline styles and CSS
     htmlText = htmlText.replace(/url\(["']?(.*?)["']?\)/g, (match, url) => {
       if (!url || url.startsWith('http') || url.startsWith('data:')) return match;
       const normalizedPath = normalizePath(basePath + url);
@@ -137,7 +132,6 @@
     return htmlText;
   }
 
-  // Normalize paths: clean "./" and "../" segments simply
   function normalizePath(path) {
     const parts = [];
     path.split('/').forEach(part => {
@@ -152,14 +146,12 @@
     status.textContent = 'Loading ZIP...';
     errorOverlay.style.display = 'none';
 
-    // Cleanup old blobs
     for (const url of Object.values(fileBlobs)) {
       URL.revokeObjectURL(url);
     }
-    if (htmlBlobUrl) URL.revokeObjectURL(htmlBlobUrl);
 
     fileBlobs = {};
-    htmlBlobUrl = null;
+    htmlContent = null;
     entryPoint = null;
     zipLoaded = false;
 
@@ -169,7 +161,6 @@
       const zip = await jszip.loadAsync(file);
       status.textContent = 'ZIP loaded. Preparing files...';
 
-      // Load all files as blobs and map their normalized paths
       const promises = [];
       zip.forEach((relativePath, zipEntry) => {
         if (!zipEntry.dir) {
@@ -185,41 +176,47 @@
 
       await Promise.all(promises);
 
-      // Find entry point index.html or first HTML file
       entryPoint = 'index.html';
       if (!fileBlobs[entryPoint]) {
         entryPoint = Object.keys(fileBlobs).find(f => f.endsWith('.html'));
       }
+
       if (!entryPoint) {
+        htmlContent = `<body style="color:#f00; background:#000; display:flex; justify-content:center; align-items:center; height:100vh; font-family:sans-serif;"><h1>No HTML entry point found in ZIP.</h1></body>`;
         status.textContent = 'No HTML file found in ZIP.';
         playBtn.disabled = true;
         pauseBtn.disabled = true;
         reloadBtn.disabled = true;
+        setIframeContent(htmlContent);
         return;
       }
 
       const indexEntry = zip.file(entryPoint);
       if (!indexEntry) throw new Error(`Entry point file ${entryPoint} missing`);
 
-      let htmlText = await indexEntry.async('text');
-
+      let rawHtml = await indexEntry.async('text');
       const basePath = getBasePath(entryPoint);
-      htmlText = rewriteAssetUrls(htmlText, basePath);
-
-      const htmlBlob = new Blob([htmlText], { type: 'text/html' });
-      htmlBlobUrl = URL.createObjectURL(htmlBlob);
+      htmlContent = rewriteAssetUrls(rawHtml, basePath);
 
       status.textContent = `Ready to play: ${entryPoint}`;
       playBtn.disabled = false;
       pauseBtn.disabled = true;
       reloadBtn.disabled = true;
       zipLoaded = true;
+
     } catch (e) {
+      htmlContent = `<body style="color:#f00; background:#000; display:flex; justify-content:center; align-items:center; height:100vh; font-family:sans-serif;"><h1>Error loading ZIP:</h1><pre>${e.message}</pre></body>`;
       status.textContent = 'Error loading ZIP: ' + e.message;
       playBtn.disabled = true;
       pauseBtn.disabled = true;
       reloadBtn.disabled = true;
+      setIframeContent(htmlContent);
     }
+  }
+
+  function setIframeContent(content) {
+    // Use srcdoc to load inline HTML to avoid blob URL issues
+    iframe.srcdoc = content;
   }
 
   zipInput.addEventListener('change', () => {
@@ -228,9 +225,9 @@
   });
 
   playBtn.addEventListener('click', () => {
-    if (!zipLoaded || !htmlBlobUrl) return;
+    if (!zipLoaded || !htmlContent) return;
     errorOverlay.style.display = 'none';
-    iframe.src = htmlBlobUrl;
+    setIframeContent(htmlContent);
     status.textContent = `Playing: ${entryPoint}`;
     playBtn.disabled = true;
     pauseBtn.disabled = false;
@@ -238,7 +235,7 @@
   });
 
   pauseBtn.addEventListener('click', () => {
-    iframe.src = 'about:blank';
+    iframe.srcdoc = '';
     status.textContent = `Paused.`;
     playBtn.disabled = false;
     pauseBtn.disabled = true;
@@ -246,22 +243,20 @@
   });
 
   reloadBtn.addEventListener('click', () => {
-    if (!zipLoaded || !htmlBlobUrl) return;
+    if (!zipLoaded || !htmlContent) return;
     errorOverlay.style.display = 'none';
-    iframe.src = '';
+    setIframeContent('');
     setTimeout(() => {
-      iframe.src = htmlBlobUrl;
+      setIframeContent(htmlContent);
       status.textContent = `Reloaded: ${entryPoint}`;
     }, 50);
   });
 
-  // Show error overlay if iframe loading fails
   iframe.addEventListener('error', () => {
     errorOverlay.textContent = 'Failed to load content inside the emulator.';
     errorOverlay.style.display = 'flex';
   });
 
-  // Optional: timeout fallback for slow loading or silent failures
   iframe.addEventListener('load', () => {
     errorOverlay.style.display = 'none';
   });
