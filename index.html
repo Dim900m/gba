@@ -1,45 +1,38 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>GBA Emulator - Play Pokemon</title>
+  <meta charset="UTF-8">
+  <title>GBA Emulator</title>
   <style>
     body {
-      margin: 0;
-      background-color: #000;
-      color: #fff;
+      background-color: #1a1a1a;
+      color: white;
+      font-family: monospace;
       display: flex;
       flex-direction: column;
       align-items: center;
-      font-family: sans-serif;
-    }
-    header {
-      background-color: #222;
-      width: 100%;
-      padding: 10px;
-      text-align: center;
-      font-size: 24px;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
     }
     canvas {
-      border: 2px solid #fff;
+      border: 4px solid #fff;
       image-rendering: pixelated;
-      margin: 20px 0;
+    }
+    input, button {
+      margin-top: 10px;
+      padding: 8px 12px;
+      font-size: 16px;
     }
     .controls {
-      margin: 10px;
-    }
-    .controls button {
-      margin: 0 5px;
-      padding: 8px 16px;
-      font-size: 16px;
-      cursor: pointer;
-    }
-    input[type="file"] {
-      margin: 10px;
+      margin-top: 15px;
+      display: flex;
+      gap: 10px;
     }
   </style>
 </head>
 <body>
-  <header>GBA Emulator</header>
+  <h1>GBA Emulator</h1>
   <input type="file" id="romFile" accept=".zip" />
   <canvas id="screen" width="240" height="160"></canvas>
   <div class="controls">
@@ -49,35 +42,42 @@
     <button onclick="loadGame()">Load</button>
   </div>
 
-  <script src="https://unpkg.com/jszip/dist/jszip.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/gh/endrift/gbajs@master/gbajs.js"></script>
-  <script>
-    const canvas = document.getElementById('screen');
-    let gba = new GameBoyAdvance();
-    gba.setCanvas(canvas);
-    let saveData = null;
+  <script src="jszip.min.js"></script>
+  <script src="js/util.js"></script>
+  <script src="js/core.js"></script>
+  <script src="js/arm.js"></script>
+  <script src="js/mmu.js"></script>
+  <script src="js/io.js"></script>
+  <script src="js/video.js"></script>
+  <script src="js/video/proxy.js"></script>
+  <script src="js/video/software.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/irq.js"></script>
+  <script src="js/keypad.js"></script>
+  <script src="js/savedata.js"></script>
+  <script src="js/gba.js"></script>
+  <script src="js/xhr.js"></script>
 
-    document.getElementById('romFile').addEventListener('change', async (event) => {
-      const file = event.target.files[0];
-      if (!file || !file.name.endsWith('.zip')) {
-        alert("Please upload a .zip file containing a .gba ROM.");
-        return;
-      }
-      try {
-        const zip = await JSZip.loadAsync(file);
-        const gbaFileName = Object.keys(zip.files).find(name => name.endsWith('.gba'));
-        if (!gbaFileName) {
-          alert("No .gba file found in the zip archive.");
-          return;
-        }
-        const romData = await zip.files[gbaFileName].async("uint8array");
-        gba.reset();
-        gba.loadRomFromByteArray(romData);
-        gba.runStable();
-      } catch (err) {
-        console.error("Error loading ROM:", err);
-        alert("Failed to load ROM.");
-      }
+  <script>
+    let gba = new GameBoyAdvance();
+    let romData = null;
+
+    gba.setCanvas(document.getElementById("screen"));
+
+    document.getElementById("romFile").addEventListener("change", async function () {
+      const file = this.files[0];
+      if (!file || !file.name.endsWith(".zip")) return alert("Please select a .zip file containing a .gba ROM.");
+
+      const zip = await JSZip.loadAsync(file);
+      const romFile = Object.keys(zip.files).find(f => f.endsWith(".gba"));
+      if (!romFile) return alert("No .gba file found in zip.");
+
+      romData = await zip.files[romFile].async("uint8array");
+      const bios = await fetch("bios.bin").then(res => res.arrayBuffer());
+      gba.setBiosBinary(new Uint8Array(bios));
+
+      gba.loadRomFromByteArray(romData);
+      gba.runStable();
     });
 
     function pauseGame() {
@@ -89,16 +89,17 @@
     }
 
     function saveGame() {
-      saveData = gba.save();
-      alert("Game saved!");
+      localStorage.setItem("gbaSave", JSON.stringify(gba.saveState()));
+      alert("Game saved.");
     }
 
     function loadGame() {
-      if (saveData) {
-        gba.load(saveData);
-        alert("Game loaded!");
+      const state = JSON.parse(localStorage.getItem("gbaSave"));
+      if (state) {
+        gba.loadState(state);
+        alert("Game loaded.");
       } else {
-        alert("No save data available.");
+        alert("No saved game found.");
       }
     }
   </script>
