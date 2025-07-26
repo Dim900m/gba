@@ -2,22 +2,72 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>GBA Emulator Zip Loader Prototype</title>
+  <title>GBA Emulator Zip Loader + Screen</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; background: #222; color: #eee; text-align: center; }
+    #screen {
+      border: 4px solid #555;
+      background: black;
+      margin: 1rem auto;
+      image-rendering: pixelated; /* crisp pixel look */
+      width: 480px;  /* 240 * 2 scale */
+      height: 320px; /* 160 * 2 scale */
+      display: block;
+    }
+  </style>
 </head>
 <body>
-  <h1>GBA Emulator Zip Loader</h1>
+  <h1>GBA Emulator Zip Loader + Screen</h1>
   <input type="file" id="zipfile" accept=".zip" />
-  <p id="status"></p>
+  <p id="status">Upload a .zip containing a .gba ROM</p>
+  <canvas id="screen" width="240" height="160"></canvas>
 
   <script>
-    // Placeholder emulator interface
+    const canvas = document.getElementById('screen');
+    const ctx = canvas.getContext('2d');
+
+    // Placeholder emulator screen buffer (simulate GBA 240x160 pixels)
+    // We'll just fill with changing color to simulate animation.
+    let frameCount = 0;
+
+    function fakeRenderLoop() {
+      frameCount++;
+      // Create an ImageData object for 240x160 pixels
+      const imageData = ctx.createImageData(240, 160);
+      const data = imageData.data;
+
+      // Fill image with a moving gradient pattern for demo
+      for (let y = 0; y < 160; y++) {
+        for (let x = 0; x < 240; x++) {
+          const i = (y * 240 + x) * 4;
+          data[i] = (x + frameCount) % 256;       // R
+          data[i + 1] = (y + frameCount) % 256;   // G
+          data[i + 2] = (x + y + frameCount) % 256; // B
+          data[i + 3] = 255;                       // A (opaque)
+        }
+      }
+
+      ctx.putImageData(imageData, 0, 0);
+
+      requestAnimationFrame(fakeRenderLoop);
+    }
+
+    // Start fake render loop now — no ROM loaded yet
+    fakeRenderLoop();
+
+    // Placeholder emulator interface: This is where you'd load your actual ROM.
     function loadROM(arrayBuffer) {
-      // This is where you'd hook your emulator core's ROM loading logic.
-      // For demo, just show the size:
-      document.getElementById('status').textContent = 
-        `ROM loaded! Size: ${arrayBuffer.byteLength} bytes`;
-      console.log('ROM data:', new Uint8Array(arrayBuffer));
+      document.getElementById('status').textContent =
+        `ROM loaded! Size: ${arrayBuffer.byteLength} bytes — emulator ready.`;
+
+      // Real emulator integration would start here.
+
+      // For demo: let's stop fake rendering and show a solid color screen
+      ctx.fillStyle = '#008000'; // green (Pokémon vibes)
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      console.log('ROM data ready:', new Uint8Array(arrayBuffer));
     }
 
     document.getElementById('zipfile').addEventListener('change', async function(event) {
@@ -28,7 +78,6 @@
 
       try {
         const zip = await JSZip.loadAsync(file);
-        // Find the first .gba file inside the zip
         const gbaFileName = Object.keys(zip.files).find(name => name.toLowerCase().endsWith('.gba'));
         if (!gbaFileName) {
           document.getElementById('status').textContent = 'No .gba file found inside the zip.';
