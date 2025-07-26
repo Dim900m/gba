@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>HTML Emulator Sandbox</title>
+<style>
+  body, html { margin: 0; height: 100%; display: flex; flex-direction: column; font-family: monospace; }
+  textarea { width: 100%; height: 40vh; font-family: monospace; font-size: 16px; padding: 10px; box-sizing: border-box; }
+  iframe { flex-grow: 1; border: 1px solid #000; }
+  button { padding: 10px 20px; background-color: #0078D7; color: white; border: none; cursor: pointer; }
+  button:hover { background-color: #005a9e; }
+  header { padding: 10px; background: #222; color: #eee; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>HTML Emulator Sandbox</h1>
+</header>
+
+<textarea id="htmlInput" placeholder="Write your HTML code here...">
+<!DOCTYPE html>
+<html>
+<head><title>Test</title></head>
+<body>
+  <h2>Hello from Emulator</h2>
+  <p>Edit this code and press Run.</p>
+</body>
+</html>
+</textarea>
+
+<button onclick="runHTML()">Run</button>
+
+<iframe id="outputFrame" sandbox="allow-scripts allow-same-origin"></iframe>
+
+<script>
+  function runHTML() {
+    const code = document.getElementById('htmlInput').value;
+    const iframe = document.getElementById('outputFrame');
+    iframe.srcdoc = code;
+  }
+
+  // Auto-run initial code
+  runHTML();
+</script>
+
+</body>
+</html>
