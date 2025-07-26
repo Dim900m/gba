@@ -1,72 +1,192 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>GBA Emulator with Zip Loader</title>
-  <style>
-    #screen {
-      image-rendering: pixelated;
-      width: 480px;  /* 4x scale of 240x160 */
-      height: 320px;
-      border: 2px solid black;
-    }
-  </style>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-  <!-- jsGBA emulator core CDN -->
-  <script src="https://unpkg.com/jsgba@latest/dist/jsgba.min.js"></script>
+<meta charset="UTF-8" />
+<title>Full GBA Emulator + Zip + Controls + Save/Load</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    background: #222;
+    color: #eee;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 1rem;
+  }
+  #screen {
+    image-rendering: pixelated;
+    width: 480px; /* 4x */
+    height: 320px;
+    border: 4px solid #444;
+    margin: 1rem 0;
+    background: black;
+  }
+  #controls button {
+    margin: 0 0.5rem;
+    padding: 0.5rem 1rem;
+    font-size: 1rem;
+    cursor: pointer;
+  }
+  #status {
+    margin-top: 1rem;
+    min-height: 1.2em;
+  }
+  input[type="file"] {
+    margin-bottom: 1rem;
+  }
+  a {
+    color: #6cf;
+    text-decoration: underline;
+  }
+</style>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://unpkg.com/jsgba@latest/dist/jsgba.min.js"></script>
 </head>
 <body>
-  <h1>GBA Emulator with Zip Loader</h1>
-  <input type="file" id="zipfile" accept=".zip" />
-  <p id="status">Load a zipped .gba ROM to start.</p>
-  <canvas id="screen" width="240" height="160"></canvas>
 
-  <script>
-    const status = document.getElementById('status');
-    const canvas = document.getElementById('screen');
-    const ctx = canvas.getContext('2d');
+<h1>Full GBA Emulator in Browser</h1>
+<input type="file" id="zipfile" accept=".zip" />
+<canvas id="screen" width="240" height="160"></canvas>
 
-    // Create emulator instance
-    const gba = new jsGBA();
+<div id="controls">
+  <button id="saveState">Save State</button>
+  <button id="loadState">Load State</button>
+  <button id="reset">Reset Game</button>
+</div>
 
-    // Setup video output to our canvas
-    gba.setScreenCanvas(canvas);
+<p id="status">Load a zipped .gba ROM to start playing.</p>
+<p>Keyboard controls: <code>Z = A</code>, <code>X = B</code>, <code>A = L</code>, <code>S = R</code>, <code>Enter = Start</code>, <code>Shift = Select</code>, <code>Arrow keys = D-Pad</code></p>
 
-    // Start paused (no ROM loaded)
-    gba.pause();
+<script>
+  const status = document.getElementById('status');
+  const canvas = document.getElementById('screen');
+  const gba = new jsGBA();
 
-    // Load zipped ROM and start emulator
-    document.getElementById('zipfile').addEventListener('change', async (event) => {
-      const file = event.target.files[0];
-      if (!file) return;
+  gba.setScreenCanvas(canvas);
+  gba.pause();
 
-      status.textContent = 'Reading zip file...';
+  let currentROMName = null;
 
-      try {
-        const zip = await JSZip.loadAsync(file);
-        const gbaFileName = Object.keys(zip.files).find(name => name.toLowerCase().endsWith('.gba'));
-        if (!gbaFileName) {
-          status.textContent = 'No .gba file found in zip.';
-          return;
-        }
+  // Keyboard mapping
+  // See jsGBA input mapping: https://github.com/endrift/jsGBA
+  const keyMap = {
+    // Arrow keys
+    'ArrowUp': 'UP',
+    'ArrowDown': 'DOWN',
+    'ArrowLeft': 'LEFT',
+    'ArrowRight': 'RIGHT',
 
-        status.textContent = `Extracting ${gbaFileName}...`;
-        const gbaFile = zip.file(gbaFileName);
-        const romBuffer = await gbaFile.async('arraybuffer');
+    // Buttons
+    'z': 'A',
+    'x': 'B',
+    'a': 'L',
+    's': 'R',
+    'Enter': 'START',
+    'Shift': 'SELECT'
+  };
 
-        status.textContent = `Loading ROM: ${gbaFileName} (${romBuffer.byteLength} bytes)`;
+  function onKeyDown(e) {
+    const btn = keyMap[e.key];
+    if (btn) {
+      gba.setKeyDown(btn);
+      e.preventDefault();
+    }
+  }
 
-        // Load the ROM to emulator and start
-        gba.loadROM(new Uint8Array(romBuffer));
-        gba.resume();
+  function onKeyUp(e) {
+    const btn = keyMap[e.key];
+    if (btn) {
+      gba.setKeyUp(btn);
+      e.preventDefault();
+    }
+  }
 
-        status.textContent = `Emulator running: ${gbaFileName}`;
+  window.addEventListener('keydown', onKeyDown);
+  window.addEventListener('keyup', onKeyUp);
 
-      } catch (err) {
-        status.textContent = 'Error loading zip/ROM: ' + err.message;
-        console.error(err);
+  // Load zipped ROM
+  document.getElementById('zipfile').addEventListener('change', async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    status.textContent = 'Reading zip file...';
+
+    try {
+      const zip = await JSZip.loadAsync(file);
+      const gbaFileName = Object.keys(zip.files).find(name => name.toLowerCase().endsWith('.gba'));
+      if (!gbaFileName) {
+        status.textContent = 'No .gba file found in zip.';
+        return;
       }
-    });
-  </script>
+
+      status.textContent = `Extracting ${gbaFileName}...`;
+      const gbaFile = zip.file(gbaFileName);
+      const romBuffer = await gbaFile.async('arraybuffer');
+
+      status.textContent = `Loading ROM: ${gbaFileName} (${romBuffer.byteLength} bytes)`;
+      currentROMName = gbaFileName;
+
+      gba.loadROM(new Uint8Array(romBuffer));
+      gba.resume();
+
+      status.textContent = `Emulator running: ${gbaFileName}`;
+
+      // Clear previous save states if any
+      // We could keep saves per ROM if desired
+    } catch (err) {
+      status.textContent = 'Error loading zip/ROM: ' + err.message;
+      console.error(err);
+    }
+  });
+
+  // Save/Load state buttons
+  const saveBtn = document.getElementById('saveState');
+  const loadBtn = document.getElementById('loadState');
+  const resetBtn = document.getElementById('reset');
+
+  saveBtn.onclick = () => {
+    if (!currentROMName) {
+      alert('Load a ROM first!');
+      return;
+    }
+    try {
+      const saveData = gba.saveState();
+      localStorage.setItem('gbaSave_' + currentROMName, saveData);
+      status.textContent = `Game state saved for ${currentROMName}`;
+    } catch (e) {
+      alert('Failed to save state: ' + e.message);
+    }
+  };
+
+  loadBtn.onclick = () => {
+    if (!currentROMName) {
+      alert('Load a ROM first!');
+      return;
+    }
+    const saveData = localStorage.getItem('gbaSave_' + currentROMName);
+    if (!saveData) {
+      alert('No saved state found for this game.');
+      return;
+    }
+    try {
+      gba.loadState(saveData);
+      status.textContent = `Game state loaded for ${currentROMName}`;
+    } catch (e) {
+      alert('Failed to load state: ' + e.message);
+    }
+  };
+
+  resetBtn.onclick = () => {
+    if (!currentROMName) {
+      alert('Load a ROM first!');
+      return;
+    }
+    gba.reset();
+    gba.resume();
+    status.textContent = `Game reset: ${currentROMName}`;
+  };
+</script>
+
 </body>
 </html>
